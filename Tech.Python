@@ -1,0 +1,98 @@
+import os
+import threading
+import platform
+import psutil
+from flask import Flask
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import yt_dlp
+
+# --- 1. WEB DASHBOARD CONFIGURATION ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    html = f"""
+    <body style="background-color:#0e1111; color:#00ffcc; font-family: 'Courier New', Courier, monospace; text-align:center; padding-top:50px;">
+        <h1 style="text-shadow: 2px 2px #ff0055;">🚀 CLOUD SENTINEL ACTIVE</h1>
+        <p style="font-size: 1.2em;">Status: <span style="color:#ffffff; background-color:#222; padding:5px;">STABLE 24/7</span></p>
+        <div style="border: 2px solid #333; display:inline-block; padding:30px; border-radius:15px; background-color:#1a1a1a;">
+            <p><b>CPU Usage:</b> {psutil.cpu_percent()}%</p>
+            <p><b>RAM Usage:</b> {psutil.virtual_memory().percent}%</p>
+            <p><b>Platform:</b> {platform.system()} {platform.release()}</p>
+        </div>
+        <p style="margin-top:20px; color:#888;">Powered by Oscar Engine</p>
+    </body>
+    """
+    return html
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# --- 2. TELEGRAM BOT LOGIC ---
+TOKEN = '7778935761:AAEz1WO8e9qSNZ8TAHVL2PefiyWO7fidRfQ'
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "⚡ **Welcome to Cloud Sentinel Downloader** ⚡\n\n"
+        "I am an independent server-based bot.\n"
+        "• Send any Video Link (TikTok, YT, IG).\n"
+        "• Use /status to check server health."
+    )
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    await update.message.reply_text(
+        f"🖥️ **Server Health Report**\n\n"
+        f"• CPU Load: {cpu}%\n"
+        f"• RAM Usage: {ram}%\n"
+        f"• Status: Operational"
+    )
+
+async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
+    status_msg = await update.message.reply_text("📡 *Processing cloud request...*", parse_mode='Markdown')
+    
+    ydl_opts = {
+        'format': 'best',
+        'outtmpl': 'cloud_dl_%(id)s.%(ext)s',
+        'quiet': True,
+        'no_warnings': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+        
+        with open(filename, 'rb') as video:
+            await context.bot.send_video(
+                chat_id=update.effective_chat.id, 
+                video=video, 
+                caption="✅ **Successfully Downloaded via Cloud Sentinel**",
+                parse_mode='Markdown'
+            )
+        
+        os.remove(filename)
+        await status_msg.delete()
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ **Error:** Failed to process the link. The content might be private or restricted.")
+        print(f"Log Error: {e}")
+
+# --- 3. SYSTEM INITIALIZATION ---
+if __name__ == '__main__':
+    # Start the web server to keep the bot alive
+    threading.Thread(target=run_web_server, daemon=True).start()
+    
+    # Start the Telegram Bot
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download))
+    
+    print(">>> CLOUD BOT IS DEPLOYED AND RUNNING...")
+    application.run_polling()
